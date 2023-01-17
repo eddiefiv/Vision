@@ -6,14 +6,25 @@ import android.os.Bundle;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.Camera;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.Preview;
+import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.lifecycle.LifecycleOwner;
+
+import com.google.common.util.concurrent.ListenableFuture;
 
 import android.widget.Toast;
 
 import com.example.vision.databinding.MainActivityBinding;
+
+import java.util.concurrent.ExecutionException;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -21,17 +32,32 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int CAMERA_PERMISSION_CODE = 1;
 
+    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
+
     MainActivityBinding mainBinding;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+
         mainBinding = MainActivityBinding.inflate(getLayoutInflater());
         setContentView(mainBinding.getRoot());
         replaceFragment(new LiveViewFragment());
         instance = this;
 
         checkCameraPermissions();
+
+        cameraProviderFuture.addListener(() -> {
+            try {
+                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                bindPreview(cameraProvider);
+            } catch (ExecutionException | InterruptedException e) {
+                // No errors need to be handled for this Future.
+                // This should never be reached.
+            }
+        }, ContextCompat.getMainExecutor(this));
 
         mainBinding.bottomNavigationView.setOnItemSelectedListener(item -> {
 
@@ -81,5 +107,21 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Camera permission denied, pleases allow permission to utilize camera view. ", Toast.LENGTH_SHORT).show();
             }
         }
+    }
+
+    void bindPreview(@NonNull ProcessCameraProvider cameraProvider) {
+        Preview preview = new Preview.Builder()
+                .build();
+
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build();
+
+        Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner)this, cameraSelector, preview);
+    }
+
+    public void testChangeFragment() {
+        replaceFragment(new SaveFragment());
+        mainBinding.bottomNavigationView.setSelectedItemId(R.id.save);
     }
 }
