@@ -7,13 +7,6 @@
     android:layout_height="match_parent"
     tools:context=".LiveViewFragment">
 
-    <androidx.camera.view.PreviewView
-        android:id="@+id/cameraPreviewView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"/>
-
     <Button
         android:id="@+id/video_capture_button"
         android:layout_width="110dp"
