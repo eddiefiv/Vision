@@ -3,6 +3,8 @@ package com.example.vision;
 import android.os.Bundle;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
 import androidx.fragment.app.Fragment;
 
 import android.util.Log;
@@ -10,7 +12,15 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import com.example.vision.databinding.LiveViewBinding;
+import com.google.common.util.concurrent.ListenableFuture;
+
 public class LiveViewFragment extends Fragment {
+
+    private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
+    private PreviewView previewView;
+
+    private LiveViewBinding liveViewBinding;
 
     public LiveViewFragment() {
         // Required constructor

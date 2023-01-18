@@ -1,6 +1,7 @@
 package com.example.vision;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 
@@ -9,6 +10,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraControl;
 import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.core.UseCaseGroup;
 import androidx.camera.core.ViewPort;
@@ -24,13 +27,17 @@ import androidx.lifecycle.LifecycleOwner;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import android.util.Log;
+import android.util.Size;
 import android.view.View;
 import android.widget.Toast;
 
 import com.example.vision.databinding.MainActivityBinding;
 
+import org.pytorch.IValue;
 import org.pytorch.LiteModuleLoader;
 import org.pytorch.Module;
+import org.pytorch.Tensor;
+import org.pytorch.torchvision.TensorImageUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -38,6 +45,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -53,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
 
     // PyTorch model;
     Module module;
+    Executor executor = Executors.newSingleThreadExecutor();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -70,12 +80,8 @@ public class MainActivity extends AppCompatActivity {
         previewView = findViewById(R.id.previewView);
         setCameraProviderListener();
 
-        // Try to load the model
-        try {
-            module = LiteModuleLoader.load(assetFilePath("yolopv2.pt"));
-        } catch (IOException e) {
-            Log.e(TAG, "Unable to load model", e);
-        }
+        // Load torch model
+        LoadTorchModule("yolopv2.pt");
 
         mainBinding.bottomNavigationView.setOnItemSelectedListener(item -> {
 
@@ -100,23 +106,27 @@ public class MainActivity extends AppCompatActivity {
         return instance;
     }
 
-    public String assetFilePath(String assetName) throws IOException {
-        File file = new File(this.getFilesDir(), assetName);
+    public void LoadTorchModule(String fileName) {
+        File modelFile = new File(this.getFilesDir(), fileName);
 
-        if (file.exists() && file.length() > 0) {
-            return file.getAbsolutePath();
-        }
+        try {
+            if (!modelFile.exists()) {
+                InputStream is = getAssets().open(fileName);
+                FileOutputStream os = new FileOutputStream(modelFile);
 
-        try (InputStream is = this.getAssets().open(assetName)) {
-            try (OutputStream os = new FileOutputStream(file)) {
-                byte[] buffer = new byte[4 * 1024];
-                int read;
-                while ((read = is.read(buffer)) != -1) {
-                    os.write(buffer, 0, read);
+                byte[] buffer = new byte[2048];
+                int bytesRead = -1;
+
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    os.write(buffer, 0, bytesRead);
                 }
-                os.flush();
+                is.close();
+                os.close();
             }
-            return file.getAbsolutePath();
+
+            module = LiteModuleLoader.load(modelFile.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -165,19 +175,42 @@ public class MainActivity extends AppCompatActivity {
 
     private void bindPreview(ProcessCameraProvider cameraProvider) {
 
-        CameraSelector cameraSelector =
-                new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
-
+        CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
         Preview preview = new Preview.Builder().build();
 
         preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-            cameraProvider.unbindAll();
-            Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview);
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().setTargetResolution(new Size(224, 224))
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
+
+        imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
+            @Override
+            public void analyze(@NonNull ImageProxy image) {
+                int rotation = image.getImageInfo().getRotationDegrees();
+                // analyze image
+                image.close();
+            }
+        });
+
+        cameraProvider.unbindAll();
+        Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview);
     }
 
-    public void testChangeFragment() {
-        replaceFragment(new SaveFragment());
-        mainBinding.bottomNavigationView.setSelectedItemId(R.id.save);
+    public void analyzeImage(ImageProxy image, int rotation) {
+        @SuppressLint("UnsafeOptInUsageError") Tensor inputTensor = TensorImageUtils.imageYUV420CenterCropToFloat32Tensor(image.getImage(), rotation, 224, 224,
+                TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+
+        Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
+
+        float[] scores = outputTensor.getDataAsFloatArray();
+        float maxScore = -Float.MAX_VALUE;
+        int maxScoreIdx = -1;
+
+        for (int i = 0; i < scores.length; i++) {
+            if (scores[i] > maxScore) {
+                maxScore = scores[i];
+                maxScoreIdx = i;
+            }
+        }
     }
 }
