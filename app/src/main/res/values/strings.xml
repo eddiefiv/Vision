@@ -3,4 +3,13 @@
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
     <string name="Permissions">Permissions</string>
+
+
+    <string-array name="experience">
+        <item>Exp</item>
+        <item>1 Year</item>
+        <item>2 Year</item>
+        <item>3 Year</item>
+        <item>4 Year</item>
+    </string-array>
 </resources>

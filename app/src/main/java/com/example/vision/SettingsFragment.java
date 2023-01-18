@@ -25,19 +25,13 @@ public class SettingsFragment extends Fragment implements View.OnClickListener {
         // Inflate the layout for this fragment
         View view = inflater.inflate(R.layout.settings, container, false);
 
-        Button testBtn = (Button) view.findViewById(R.id.testButton);
-        testBtn.setOnClickListener(this);
+
 
         return view;
     }
 
     @Override
     public void onClick(View v) {
-        // Check which button is being clicked
-        switch (v.getId()) {
-            case R.id.testButton:
-                MainActivity.getInstance().testChangeFragment();
-                break;
-        }
+        // Onclick code
     }
 }

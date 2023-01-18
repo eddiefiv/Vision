@@ -2,7 +2,17 @@ package com.example.vision;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothSocket;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
@@ -30,20 +40,13 @@ import android.util.Log;
 import android.util.Size;
 import android.view.View;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import com.example.vision.databinding.MainActivityBinding;
 
-import org.pytorch.IValue;
-import org.pytorch.LiteModuleLoader;
-import org.pytorch.Module;
-import org.pytorch.Tensor;
-import org.pytorch.torchvision.TensorImageUtils;
-
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -53,16 +56,17 @@ public class MainActivity extends AppCompatActivity {
     private static MainActivity instance;
 
     private static final int CAMERA_PERMISSION_CODE = 1;
+    private static final int BLUETOOTH_PERMISSION_CODE = 2;
     private static final String TAG = "MainActivity";
 
     private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
     private PreviewView previewView;
+    private VideoView videoView;
 
     MainActivityBinding mainBinding;
 
-    // PyTorch model;
-    Module module;
-    Executor executor = Executors.newSingleThreadExecutor();
+    //BluetoothManager bluetoothManager = getSystemService(BluetoothManager.class);
+    //BluetoothAdapter bluetoothAdapter = bluetoothManager.getAdapter();
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -75,13 +79,37 @@ public class MainActivity extends AppCompatActivity {
         replaceFragment(new LiveViewFragment());
         instance = this;
 
+        // Check for permissions
         checkCameraPermissions();
 
-        previewView = findViewById(R.id.previewView);
-        setCameraProviderListener();
+        // Enable Bluetooth connection intent
+        /*if (!bluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            startActivity(enableBtIntent);
+        }*/
 
-        // Load torch model
-        LoadTorchModule("yolopv2.pt");
+        // Register for broadcasts when a device is discovered
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        registerReceiver(receiver, filter);
+
+        //previewView = findViewById(R.id.previewView);
+        //setCameraProviderListener();
+
+        videoView = (VideoView)findViewById(R.id.videoView);
+
+        // Show video
+        videoView.setVideoURI(Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.footage));
+        videoView.requestFocus();
+        videoView.start();
+        videoView.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mediaPlayer) {
+                videoView.start();
+            }
+        });
 
         mainBinding.bottomNavigationView.setOnItemSelectedListener(item -> {
 
@@ -102,32 +130,15 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    public static MainActivity getInstance() {
-        return instance;
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        unregisterReceiver(receiver);
     }
 
-    public void LoadTorchModule(String fileName) {
-        File modelFile = new File(this.getFilesDir(), fileName);
-
-        try {
-            if (!modelFile.exists()) {
-                InputStream is = getAssets().open(fileName);
-                FileOutputStream os = new FileOutputStream(modelFile);
-
-                byte[] buffer = new byte[2048];
-                int bytesRead = -1;
-
-                while ((bytesRead = is.read(buffer)) != -1) {
-                    os.write(buffer, 0, bytesRead);
-                }
-                is.close();
-                os.close();
-            }
-
-            module = LiteModuleLoader.load(modelFile.getAbsolutePath());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public static MainActivity getInstance() {
+        return instance;
     }
 
     private void replaceFragment(Fragment fragment) {
@@ -147,17 +158,25 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (requestCode == CAMERA_PERMISSION_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "Camera permission granted", Toast.LENGTH_SHORT).show();
-            }
-            else {
-                Toast.makeText(this, "Camera permission denied, pleases allow permission to utilize camera view. ", Toast.LENGTH_SHORT).show();
-            }
+        switch (requestCode) {
+            case CAMERA_PERMISSION_CODE:
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "Camera permission granted", Toast.LENGTH_SHORT).show();
+                }
+                else {
+                    Toast.makeText(this, "Camera permission denied, pleases allow permission to utilize camera view.", Toast.LENGTH_SHORT).show();
+                }
+            case BLUETOOTH_PERMISSION_CODE:
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "Bluetooth permission granted", Toast.LENGTH_SHORT).show();
+                }
+                else {
+                    Toast.makeText(this, "Bluetooth permission denied, please allow Bluetooth permissions to allow for maximum functionality.", Toast.LENGTH_SHORT).show();
+                }
         }
     }
 
-    private void setCameraProviderListener() {
+    /*private void setCameraProviderListener() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
                 ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
@@ -171,9 +190,9 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         }, ContextCompat.getMainExecutor(this));
-    }
+    }*/
 
-    private void bindPreview(ProcessCameraProvider cameraProvider) {
+    /*private void bindPreview(ProcessCameraProvider cameraProvider) {
 
         CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
         Preview preview = new Preview.Builder().build();
@@ -183,33 +202,46 @@ public class MainActivity extends AppCompatActivity {
         ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().setTargetResolution(new Size(224, 224))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
 
-        imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
-            @Override
-            public void analyze(@NonNull ImageProxy image) {
-                int rotation = image.getImageInfo().getRotationDegrees();
-                // analyze image
-                image.close();
-            }
-        });
-
         cameraProvider.unbindAll();
         Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview);
-    }
+    }*/
 
-    public void analyzeImage(ImageProxy image, int rotation) {
-        @SuppressLint("UnsafeOptInUsageError") Tensor inputTensor = TensorImageUtils.imageYUV420CenterCropToFloat32Tensor(image.getImage(), rotation, 224, 224,
-                TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+    private final BroadcastReceiver receiver = new BroadcastReceiver() {
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
 
-        Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
+            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                // Discovery has found a device
+                // Get the BluetoothDevice object and its info from the Intent
+                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                @SuppressLint("MissingPermission") String deviceName = device.getName();
+                String deviceHardwareAddress = device.getAddress(); // MAC Address
+            }
+        }
+    };
 
-        float[] scores = outputTensor.getDataAsFloatArray();
-        float maxScore = -Float.MAX_VALUE;
-        int maxScoreIdx = -1;
+    @SuppressLint("MissingPermission")
+    public void BTConnect(BluetoothDevice device) {
+        final UUID SerialPortServiceClass_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+        BluetoothSocket socket = null;
+        String MAC = device.getAddress();
 
-        for (int i = 0; i < scores.length; i++) {
-            if (scores[i] > maxScore) {
-                maxScore = scores[i];
-                maxScoreIdx = i;
+        try {
+            socket = device.createInsecureRfcommSocketToServiceRecord(SerialPortServiceClass_UUID);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            socket.connect();
+        } catch (IOException e1) {
+            try {
+                socket.close();
+                Log.d("BT_TESTING", "Cannot Connect");
+                e1.printStackTrace();
+            } catch (IOException e2) {
+                Log.d("BT_TESTING", "Socket not closed");
+                e2.printStackTrace();
             }
         }
     }

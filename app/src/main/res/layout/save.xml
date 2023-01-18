@@ -7,11 +7,12 @@
     android:layout_height="match_parent"
     tools:context=".SaveFragment">
 
-    <TextView
+    <View
+        android:id="@+id/view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:text="@string/hello_blank_fragment"
-        tools:layout_editor_absoluteX="233dp"
-        tools:layout_editor_absoluteY="187dp" />
-
+        android:alpha="100"
+        android:background="#FFFFFF"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>
